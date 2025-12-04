@@ -1,4 +1,4 @@
-# app.py - CORRECTED LOGIN FLOW
+# app.py - COMPLETE VERSION WITH OPERATOR LOGIN
 import streamlit as st
 from db import init_db, verify_user, create_user
 from auth_utils import safe_rerun, do_logout, set_sidebar_visibility
@@ -55,16 +55,23 @@ def handle_admin_login():
 
 def handle_operator_login():
     """Process operator login - sets session state only"""
-    name = st.session_state.get("operator_name", "").strip() or "operator"
-    route = st.session_state.get("operator_route_choice", "Mumbai → Delhi")
-    office = "MUMBAI" if route == "Mumbai → Delhi" else "DELHI"
+    username = st.session_state.get("operator_username", "").strip()
+    password = st.session_state.get("operator_password", "")
     
-    st.session_state.logged_in = True
-    st.session_state.username = name
-    st.session_state.role = "OPERATOR"
-    st.session_state.office = office
-    st.session_state.combined_page = "token"  # CRITICAL: Set to token page
-    st.session_state.login_error = None
+    if not username or not password:
+        st.session_state.login_error = "Please enter username and password"
+        return
+    
+    user = verify_user(username, password)
+    if user and user.get("role") == "OPERATOR":
+        st.session_state.logged_in = True
+        st.session_state.username = user["username"]
+        st.session_state.role = "OPERATOR"
+        st.session_state.office = user.get("office_location")
+        st.session_state.combined_page = "token"
+        st.session_state.login_error = None
+    else:
+        st.session_state.login_error = "❌ Invalid operator credentials"
 
 # =====================================
 # LOGIN SCREEN
@@ -109,11 +116,8 @@ if not st.session_state.logged_in:
         st.markdown("---")
         st.subheader("👷 Operator Login")
         
-        st.text_input("Operator Name / नाम", key="operator_name", value="operator1", placeholder="Enter your name")
-        st.radio("Select Route / रूट चुनें", 
-                ["Mumbai → Delhi", "Delhi → Mumbai"], 
-                key="operator_route_choice",
-                horizontal=True)
+        st.text_input("Username", key="operator_username", placeholder="Enter operator username")
+        st.text_input("Password", type="password", key="operator_password", placeholder="Enter password")
         
         col1, col2 = st.columns(2)
         with col1:
@@ -123,14 +127,19 @@ if not st.session_state.logged_in:
                     st.rerun()
         
         with col2:
-            if st.button("➕ Create Test Operator", use_container_width=True):
+            if st.button("➕ Create Test Operators", use_container_width=True):
                 try:
-                    create_user("operator1", "operator123", role="OPERATOR", office="DELHI")
-                    st.success("✅ Operator created: operator1")
-                except Exception:
-                    st.info("ℹ️ Operator already exists")
+                    # Create Mumbai operator
+                    create_user("mumbai_op", "mumbai123", role="OPERATOR", office="MUMBAI")
+                    # Create Delhi operator
+                    create_user("delhi_op", "delhi123", role="OPERATOR", office="DELHI")
+                    st.success("✅ Operators created:\n- Mumbai: mumbai_op / mumbai123\n- Delhi: delhi_op / delhi123")
+                except Exception as e:
+                    st.info(f"ℹ️ {str(e)}")
         
-        st.info("💡 Operators can quickly login without password. Route determines your office location.")
+        st.caption("**Test Credentials:**")
+        st.caption("• Mumbai Operator: **mumbai_op / mumbai123**")
+        st.caption("• Delhi Operator: **delhi_op / delhi123**")
     
     st.stop()
 

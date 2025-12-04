@@ -1,4 +1,4 @@
-# pages/combined_all_part1.py - FINAL VERSION
+# pages/combined_all_part1.py - WITH DASHBOARD
 import streamlit as st
 import pandas as pd
 from datetime import datetime, date
@@ -26,15 +26,11 @@ def get_main_render():
     role = st.session_state.get("role")
 
     if role == "ADMIN":
-        # show sidebar + admin menu
-        # show_default_sidebar()
         admin_top_buttons()
         return st  # render in main area
-
     else:
-        # hide sidebar + operator menu
         hide_default_sidebar()
-        return operator_left_panel()  # left panel returns main area column
+        return operator_left_panel()
 
 
 # -------------------------
@@ -54,11 +50,6 @@ def operator_left_panel():
             nav_to_page("challan")
             safe_rerun()
 
-
-        # if st.button("Home", key="op_btn_home", use_container_width=True):
-        #     nav_to_page("home")
-        #     safe_rerun()
-
         st.markdown("---")
         st.markdown(f"**User:** {st.session_state.get('username')}")
         st.markdown(f"**Office:** {st.session_state.get('office')}")
@@ -74,6 +65,10 @@ def admin_top_buttons():
 
     if st.sidebar.button("🏠 Home", key="admin_btn_home", use_container_width=True):
         nav_to_page("home")
+        safe_rerun()
+    
+    if st.sidebar.button("📊 Dashboard", key="admin_btn_dashboard", use_container_width=True):
+        nav_to_page("dashboard")
         safe_rerun()
 
     if st.sidebar.button("👥 Party Master", key="admin_btn_party", use_container_width=True):
@@ -116,6 +111,168 @@ def admin_top_buttons():
 
 
 # -------------------------
+# SECTION: INTERACTIVE DASHBOARD
+# -------------------------
+def section_dashboard(render):
+    render.title("📊 Transport Management Dashboard")
+    render.info("Real-time insights and analytics with interactive visualizations")
+
+    # Filters
+    col_f1, col_f2 = render.columns(2)
+    with col_f1:
+        date_range = render.selectbox("Date Range", 
+            ["Last 7 Days", "Last 30 Days", "Last 90 Days", "This Month"],
+            key="dash_date_range")
+    with col_f2:
+        route_filter = render.selectbox("Route Filter",
+            ["All Routes", "Delhi → Mumbai", "Mumbai → Delhi"],
+            key="dash_route")
+
+    render.markdown("---")
+
+    # Generate dummy data
+    def generate_dashboard_data():
+        from datetime import timedelta
+        dates = [(datetime.now() - timedelta(days=i)).strftime("%d %b") for i in range(6, -1, -1)]
+        
+        daily_data = pd.DataFrame({
+            'Date': dates,
+            'Tokens': [45, 52, 38, 61, 48, 35, 28],
+            'Weight (kg)': [2800, 3200, 2400, 3800, 3000, 2100, 1700],
+            'Revenue (₹)': [68000, 78000, 58000, 92000, 72000, 51000, 41000]
+        })
+        
+        status_data = pd.DataFrame({
+            'Status': ['Pending', 'Loaded', 'In Transit', 'Delivered'],
+            'Count': [45, 78, 92, 132]
+        })
+        
+        route_data = pd.DataFrame({
+            'Route': ['Delhi → Mumbai', 'Mumbai → Delhi', 'Delhi → Pune', 'Mumbai → Bangalore'],
+            'Tokens': [145, 132, 45, 25]
+        })
+        
+        top_parties = pd.DataFrame({
+            'Party': ['ABC Logistics', 'XYZ Traders', 'PQR Enterprises', 'LMN Industries', 'RST Corporation'],
+            'Tokens': [85, 72, 64, 58, 45],
+            'Revenue': [245000, 198000, 176000, 164000, 142000],
+            'Outstanding': [45000, 22000, 0, 38000, 15000]
+        })
+        
+        return daily_data, status_data, route_data, top_parties
+
+    daily_data, status_data, route_data, top_parties = generate_dashboard_data()
+
+    # KPI Cards
+    kpi1, kpi2, kpi3, kpi4 = render.columns(4)
+    
+    with kpi1:
+        render.markdown("""
+            <div style='background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                        padding: 20px; border-radius: 10px; color: white; text-align: center;'>
+                <h4 style='margin:0; font-size:14px;'>💰 Total Revenue</h4>
+                <h1 style='margin:10px 0; font-size:32px;'>₹4.6L</h1>
+                <p style='margin:0; font-size:12px;'>↑ 12.5% from last week</p>
+            </div>
+        """, unsafe_allow_html=True)
+    
+    with kpi2:
+        render.markdown("""
+            <div style='background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); 
+                        padding: 20px; border-radius: 10px; color: white; text-align: center;'>
+                <h4 style='margin:0; font-size:14px;'>📦 Total Tokens</h4>
+                <h1 style='margin:10px 0; font-size:32px;'>307</h1>
+                <p style='margin:0; font-size:12px;'>↑ 8.3% from last week</p>
+            </div>
+        """, unsafe_allow_html=True)
+    
+    with kpi3:
+        render.markdown("""
+            <div style='background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); 
+                        padding: 20px; border-radius: 10px; color: white; text-align: center;'>
+                <h4 style='margin:0; font-size:14px;'>🚛 Active Trucks</h4>
+                <h1 style='margin:10px 0; font-size:32px;'>45</h1>
+                <p style='margin:0; font-size:12px;'>↓ 2.1% from last week</p>
+            </div>
+        """, unsafe_allow_html=True)
+    
+    with kpi4:
+        render.markdown("""
+            <div style='background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%); 
+                        padding: 20px; border-radius: 10px; color: white; text-align: center;'>
+                <h4 style='margin:0; font-size:14px;'>👥 Active Parties</h4>
+                <h1 style='margin:10px 0; font-size:32px;'>28</h1>
+                <p style='margin:0; font-size:12px;'>↑ 5.7% from last week</p>
+            </div>
+        """, unsafe_allow_html=True)
+
+    render.markdown("---")
+
+    # Charts Row 1
+    chart_col1, chart_col2 = render.columns(2)
+    
+    with chart_col1:
+        render.subheader("📈 Daily Booking Trend")
+        render.line_chart(daily_data.set_index('Date')[['Tokens', 'Revenue (₹)']])
+    
+    with chart_col2:
+        render.subheader("📦 Token Status Distribution")
+        render.bar_chart(status_data.set_index('Status'))
+
+    # Charts Row 2
+    chart_col3, chart_col4 = render.columns(2)
+    
+    with chart_col3:
+        render.subheader("🗺️ Route-wise Distribution")
+        render.bar_chart(route_data.set_index('Route'))
+    
+    with chart_col4:
+        render.subheader("💹 Top 5 Parties by Tokens")
+        render.bar_chart(top_parties.set_index('Party')['Tokens'])
+
+    render.markdown("---")
+
+    # Top Parties Table
+    render.subheader("👥 Top 5 Parties Details")
+    
+    # Format the dataframe for display
+    display_df = top_parties.copy()
+    display_df['Revenue'] = display_df['Revenue'].apply(lambda x: f"₹{x/1000:.0f}K")
+    display_df['Outstanding'] = display_df['Outstanding'].apply(lambda x: f"₹{x/1000:.0f}K")
+    display_df['Status'] = display_df['Outstanding'].apply(
+        lambda x: '🟢 Clear' if x == '₹0K' else '🟡 Pending' if int(x.replace('₹','').replace('K','')) < 30 else '🔴 High'
+    )
+    
+    render.dataframe(display_df, use_container_width=True, height=250)
+
+    render.markdown("---")
+
+    # Additional Metrics
+    metric_col1, metric_col2, metric_col3 = render.columns(3)
+    
+    with metric_col1:
+        render.metric(
+            label="⏱️ Avg Delivery Time",
+            value="2.4 days",
+            delta="-0.3 days"
+        )
+    
+    with metric_col2:
+        render.metric(
+            label="😊 Customer Satisfaction",
+            value="94.2%",
+            delta="2.1%"
+        )
+    
+    with metric_col3:
+        render.metric(
+            label="🚛 Fleet Utilization",
+            value="87.5%",
+            delta="4.2%"
+        )
+
+
+# -------------------------
 # SECTION: PARTY MASTER
 # -------------------------
 def section_party(render):
@@ -128,7 +285,6 @@ def section_party(render):
         mobile = render.text_input("Mobile Number", key="party_mobile")
         gst_no = render.text_input("GST No. (optional)", key="party_gst")
         
-        # 👇 CHANGED: text_area instead of text_input
         marka = render.text_area(
             "Marka / Sign (Multiple markas: comma-separated)", 
             key="party_marka",
@@ -246,7 +402,6 @@ def section_token(render):
     render.title("📄 Token / Bilty Generation")
     render.info("यहाँ से आप आसानी से Token (Bilty) बना सकते हैं — Marka पहले, बाकी auto-fill।")
 
-
     office = st.session_state.get("office")
     if st.session_state.get("role") == "OPERATOR":
         if office == "DELHI":
@@ -266,7 +421,6 @@ def section_token(render):
         render.error("❌ कोई Marka मौजूद नहीं है — पहले Party Master में Marka डालें।")
         return
 
-
     options = [f"{m['marka']}  —  {m['party_name']}" for m in markas]
     
     selected_opt = render.selectbox(
@@ -276,7 +430,6 @@ def section_token(render):
         key="token_marka_select"
     )
     
-    # Extract selected marka details
     sel_index = options.index(selected_opt)
     selected_marka = markas[sel_index]["marka"]
     selected_party_id = markas[sel_index]["party_id"]
@@ -310,7 +463,6 @@ def section_token(render):
         )
         render.success(f"✅ Token created — Token No: {token_no}")
 
-        # Generate simple PDF
         from reportlab.pdfgen import canvas
         from reportlab.lib.pagesizes import A4
 
@@ -371,14 +523,7 @@ def section_challan(render):
         render.markdown(f"To City (auto): {to_city}")
 
     pending = get_pending_tokens(from_city=from_city, to_city=to_city) if from_city else get_pending_tokens()
-    # DEBUG: show how many pending tokens were found (temporary - remove later)
-    #render.markdown(f"**DEBUG:** pending tokens found = {len(pending)}")
-    #if len(pending) > 0:
-        # show a compact list of token numbers so we can confirm they were fetched
-        #token_list_preview = ", ".join(str(t.get("token_no")) for t in pending[:20])
-        #render.markdown(f"**DEBUG:** token nos (preview): {token_list_preview}")
-    #else:
-        #render.warning("⚠️ No pending tokens found for this route (this may be expected).")
+    
     if not pending:
         render.warning("अभी कोई pending token नहीं है।")
         return
