@@ -1,4 +1,4 @@
-# pages/combined_all_part2.py - CORRECTED ROUTER
+# pages/combined_all_part2.py - CORRECTED ROUTER (with Admin Dashboard charts)
 import streamlit as st
 import pandas as pd
 import io
@@ -15,6 +15,10 @@ from db import get_conn, get_party_list, compute_party_balance
 
 # Import PDF functions
 from utils.pdf_utils import bill_pdf, ledger_pdf
+
+# --- New imports for plotting
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
 
 def run_app():
     """
@@ -91,6 +95,13 @@ def run_app():
                             st.session_state["combined_page"] = page_name
                             safe_rerun()
 
+            # --- NEW: Render charts below the menu ---
+            try:
+                render_admin_charts(main_render)
+            except Exception as e:
+                # Do not break dashboard if plotting fails
+                main_render.error(f"Error rendering charts: {e}")
+
             parties = get_party_list()
             if parties:
                 main_render.success(f"Total Parties: {len(parties)}")
@@ -100,6 +111,196 @@ def run_app():
             # Operator on home page - show token page instead
             # This should not normally happen as operators start on token page
             main_render.info("👉 Use the menu to navigate")
+
+# -------------------------
+# ADMIN DASHBOARD CHARTS (NEW)
+# -------------------------
+def render_admin_charts(area):
+    """
+    Polished charts for Admin Dashboard.
+    Transparent background so charts blend with Streamlit theme.
+    """
+    import matplotlib.pyplot as plt
+    import matplotlib.dates as mdates
+    from matplotlib.ticker import FuncFormatter
+
+    area.markdown("---")
+    area.subheader("📈 Quick Analytics")
+
+    conn = get_conn()
+    try:
+        tokens = pd.read_sql_query("""
+            SELECT t.id AS token_no, t.date_time, t.party_id, p.party_name, t.weight, t.pkgs AS packages, t.amount,
+                   t.from_city, t.to_city, t.status
+            FROM tokens t
+            LEFT JOIN party_master p ON p.id = t.party_id
+            ORDER BY t.date_time
+        """, conn)
+        payments = pd.read_sql_query("SELECT party_id, date, amount FROM payments", conn)
+        parties = pd.read_sql_query("SELECT id, party_name FROM party_master", conn)
+    finally:
+        conn.close()
+
+    # Parse dates safely
+    if not tokens.empty:
+        tokens["dt"] = pd.to_datetime(tokens["date_time"], errors="coerce")
+        tokens = tokens[tokens["dt"].notna()].copy()
+        tokens["date"] = tokens["dt"].dt.date
+        tokens["month"] = tokens["dt"].dt.to_period("M").dt.to_timestamp()
+    else:
+        tokens["date"] = pd.Series(dtype="object")
+        tokens["month"] = pd.Series(dtype="datetime64[ns]")
+
+    if not payments.empty:
+        payments["dt"] = pd.to_datetime(payments["date"], errors="coerce", dayfirst=True)
+        payments = payments[payments["dt"].notna()].copy()
+        payments["date"] = payments["dt"].dt.date
+    else:
+        payments["date"] = pd.Series(dtype="object")
+
+    # common style settings for professional look
+    line_color = "#2f8fd6"   # pleasing blue
+    bar_color = "#2f8fd6"
+    grid_color = "#444444"
+    txt_color = "#ffffff"    # white text (suits dark theme)
+    small_fig = (6, 2.4)
+
+    def style_ax(ax):
+        """Apply consistent style to axes for dark backgrounds."""
+        ax.set_facecolor("none")           # transparent axes
+        fig = ax.get_figure()
+        fig.patch.set_alpha(0.0)           # transparent figure background
+        # keep left and bottom spines only
+        for spine in ("top", "right"):
+            ax.spines[spine].set_visible(False)
+        for spine in ("left", "bottom"):
+            ax.spines[spine].set_color("#666666")
+        ax.tick_params(colors=txt_color, which="both")
+        ax.yaxis.label.set_color(txt_color)
+        ax.xaxis.label.set_color(txt_color)
+        ax.title.set_color(txt_color)
+        ax.grid(True, color=grid_color, linewidth=0.4, linestyle="--", alpha=0.6)
+
+    # --- Chart 1: Daily token count (line) ---
+    try:
+        if not tokens.empty:
+            daily_cnt = tokens.groupby("date").agg(tokens=("token_no", "count")).reset_index()
+            daily_cnt["date"] = pd.to_datetime(daily_cnt["date"])
+            fig, ax = plt.subplots(figsize=small_fig, dpi=100)
+            ax.plot(daily_cnt["date"], daily_cnt["tokens"], color=line_color, linewidth=2.2, marker="o", markersize=5)
+            ax.set_title("Daily Tokens", fontsize=14, fontweight="semibold")
+            ax.xaxis.set_major_formatter(mdates.DateFormatter("%d %b"))
+            fig.autofmt_xdate(rotation=25)
+            style_ax(ax)
+            area.pyplot(fig, clear_figure=True)
+            plt.close(fig)
+        else:
+            area.info("No booking data to show Daily Tokens.")
+    except Exception as e:
+        area.error(f"Error in Daily Tokens chart: {e}")
+
+    # --- Chart 2: Daily revenue (bar) ---
+    try:
+        if not tokens.empty:
+            daily_rev = tokens.groupby("date").agg(revenue=("amount", "sum")).reset_index()
+            daily_rev["date"] = pd.to_datetime(daily_rev["date"])
+            fig, ax = plt.subplots(figsize=small_fig, dpi=100)
+            ax.bar(daily_rev["date"], daily_rev["revenue"], width=0.6, color=bar_color, alpha=0.92)
+            ax.set_title("Daily Revenue", fontsize=14, fontweight="semibold")
+            ax.xaxis.set_major_formatter(mdates.DateFormatter("%d %b"))
+            fig.autofmt_xdate(rotation=25)
+            # format y as rupee-ish with commas
+            ax.yaxis.set_major_formatter(FuncFormatter(lambda x, pos: f"₹{int(x):,}"))
+            style_ax(ax)
+            area.pyplot(fig, clear_figure=True)
+            plt.close(fig)
+        else:
+            area.info("No booking data to show Daily Revenue.")
+    except Exception as e:
+        area.error(f"Error in Daily Revenue chart: {e}")
+
+    # layout two-column area for next charts
+    c1, c2 = area.columns(2)
+
+    # --- Chart 3: Top parties by billing (horizontal bar) ---
+    try:
+        if not tokens.empty:
+            top_party = tokens.groupby("party_name").agg(total_billing=("amount", "sum")).reset_index()
+            top_party = top_party.dropna(subset=["party_name"]).sort_values("total_billing", ascending=True).tail(10)
+            fig, ax = plt.subplots(figsize=(6, 3), dpi=100)
+            ax.barh(top_party["party_name"], top_party["total_billing"], color=bar_color, alpha=0.92)
+            ax.set_title("Top Parties by Billing (Top 10)", fontsize=13, fontweight="semibold")
+            ax.xaxis.set_major_formatter(FuncFormatter(lambda x, pos: f"₹{int(x):,}"))
+            style_ax(ax)
+            # reduce left padding so names are readable
+            fig.tight_layout(pad=1.0)
+            c1.pyplot(fig, clear_figure=True)
+            plt.close(fig)
+        else:
+            c1.info("No booking data to show Top Parties.")
+    except Exception as e:
+        c1.error(f"Error in Top Parties chart: {e}")
+
+    # --- Chart 4: Outstanding by party (bar) ---
+    try:
+        if (not tokens.empty) or (not payments.empty):
+            tok_sum = tokens.groupby("party_id").agg(total_billing=("amount", "sum")).reset_index() if not tokens.empty else pd.DataFrame(columns=["party_id","total_billing"])
+            pay_sum = payments.groupby("party_id").agg(payments_sum=("amount", "sum")).reset_index() if not payments.empty else pd.DataFrame(columns=["party_id","payments_sum"])
+            out = tok_sum.merge(pay_sum, on="party_id", how="left").fillna(0)
+            out["outstanding"] = out["total_billing"] - out["payments_sum"]
+            out = out.merge(parties, left_on="party_id", right_on="id", how="left")
+            out_df = out[["party_name", "outstanding"]].dropna(subset=["party_name"]).sort_values("outstanding", ascending=False).head(10)
+            fig, ax = plt.subplots(figsize=(6, 3), dpi=100)
+            ax.bar(out_df["party_name"].astype(str), out_df["outstanding"], color="#f39c12", alpha=0.95)
+            ax.set_title("Outstanding by Party (Top 10)", fontsize=13, fontweight="semibold")
+            ax.tick_params(axis="x", rotation=30)
+            ax.yaxis.set_major_formatter(FuncFormatter(lambda x, pos: f"₹{int(x):,}"))
+            style_ax(ax)
+            c2.pyplot(fig, clear_figure=True)
+            plt.close(fig)
+        else:
+            c2.info("No data to show Outstanding.")
+    except Exception as e:
+        c2.error(f"Error in Outstanding chart: {e}")
+
+    # --- Chart 5: Route-wise business volume (bar) ---
+    try:
+        if not tokens.empty:
+            tokens["route"] = tokens["from_city"].fillna("") + " → " + tokens["to_city"].fillna("")
+            route_sum = tokens.groupby("route").agg(revenue=("amount", "sum")).reset_index().sort_values("revenue", ascending=False).head(8)
+            fig, ax = plt.subplots(figsize=(6, 2.6), dpi=100)
+            ax.bar(route_sum["route"].astype(str), route_sum["revenue"], color=bar_color, alpha=0.92)
+            ax.set_title("Route-wise Revenue (Top routes)", fontsize=13, fontweight="semibold")
+            ax.tick_params(axis="x", rotation=35)
+            ax.yaxis.set_major_formatter(FuncFormatter(lambda x, pos: f"₹{int(x):,}"))
+            style_ax(ax)
+            area.pyplot(fig, clear_figure=True)
+            plt.close(fig)
+        else:
+            area.info("No booking data to show Routes.")
+    except Exception as e:
+        area.error(f"Error in Route-wise chart: {e}")
+
+    # --- Chart 6: Monthly weight moved (line) ---
+    try:
+        if not tokens.empty:
+            monthly = tokens.groupby("month").agg(total_weight=("weight", "sum")).reset_index()
+            if not monthly.empty:
+                fig, ax = plt.subplots(figsize=small_fig, dpi=100)
+                ax.plot(monthly["month"], monthly["total_weight"], color="#16a085", linewidth=2.2, marker="o")
+                ax.set_title("Monthly Weight Moved", fontsize=13, fontweight="semibold")
+                ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %Y"))
+                fig.autofmt_xdate(rotation=25)
+                ax.yaxis.set_major_formatter(FuncFormatter(lambda x, pos: f"{int(x):,} kg"))
+                style_ax(ax)
+                area.pyplot(fig, clear_figure=True)
+                plt.close(fig)
+            else:
+                area.info("No monthly aggregation available for weight.")
+        else:
+            area.info("No booking data to show Monthly Weight.")
+    except Exception as e:
+        area.error(f"Error in Monthly Weight chart: {e}")
 
 # -------------------------
 # SECTION: PAYMENTS
